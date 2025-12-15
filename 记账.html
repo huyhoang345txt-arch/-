@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>我的智能账本 V6</title>
+    <title>我的智能账本 V6 Pro</title>
     <style>
         :root {
             /* 浅色模式变量 */
@@ -97,7 +97,23 @@
         .progress-track { height: 12px; background: var(--icon-bg); border-radius: 6px; overflow: hidden; }
         .progress-fill { height: 100%; background: var(--primary); width: 0%; border-radius: 6px; transition: width 0.6s cubic-bezier(0.25, 1, 0.5, 1); }
         
-        /* 3. 设置页 & 快捷键 */
+        /* 3. 健康页 (新增) */
+        .health-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; }
+        .bmi-box { background: var(--icon-bg); border-radius: 12px; padding: 15px; text-align: center; }
+        .bmi-val { font-size: 24px; font-weight: 700; margin-bottom: 4px; color: var(--primary); }
+        .bmi-label { font-size: 12px; color: var(--text-sub); }
+        .weight-input-group { display: flex; align-items: baseline; justify-content: center; margin: 20px 0; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+        .weight-input { font-size: 40px; font-weight: 700; width: 120px; text-align: center; border: none; background: transparent; color: var(--text); outline: none; }
+        .weight-unit { color: var(--text-sub); font-size: 16px; margin-left: 5px; }
+        
+        /* 折线图样式 */
+        .line-chart-container { height: 200px; width: 100%; position: relative; margin-top: 20px; }
+        .line-chart-svg { width: 100%; height: 100%; overflow: visible; }
+        .line-path { fill: none; stroke: var(--primary); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+        .line-point { fill: var(--card); stroke: var(--primary); stroke-width: 2; r: 4; }
+        .chart-labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-sub); margin-top: 5px; }
+
+        /* 4. 设置页 & 快捷键 */
         .shortcut-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
         .chip { background: var(--icon-bg); color: var(--primary); padding: 10px; border-radius: 12px; font-size: 13px; font-weight: 600; text-align: center; position: relative; border: 1px solid transparent; transition: 0.2s; }
         .chip:active { transform: scale(0.95); background: var(--border); }
@@ -136,7 +152,6 @@
 </head>
 <body>
 
-    <!-- 1. 明细页 -->
     <div id="page-home" class="page active">
         <div class="search-box">
             <span class="search-icon">🔍</span>
@@ -150,11 +165,9 @@
         </div>
     </div>
 
-    <!-- 2. 统计页 -->
     <div id="page-stats" class="page">
         <h2>财务看板</h2>
 
-        <!-- 甜甜圈图表 -->
         <div class="card">
             <h3>本月支出</h3>
             <div class="chart-wrapper" id="donutChart">
@@ -167,11 +180,9 @@
             <div id="chartLegend" style="display:flex; flex-wrap:wrap; gap:12px; justify-content:center; font-size:12px; color:var(--text-sub);"></div>
         </div>
 
-        <!-- 双预算监控 -->
         <div class="card">
             <h3>预算监控</h3>
             
-            <!-- 日预算 -->
             <div class="budget-row">
                 <div class="budget-header">
                     <span>今日限额</span>
@@ -183,7 +194,6 @@
                 <div style="text-align:right; font-size:11px; margin-top:4px; color:var(--text-sub);" id="tipDaily">剩余: 0</div>
             </div>
 
-            <!-- 月预算 -->
             <div class="budget-row" style="margin-bottom:0;">
                 <div class="budget-header">
                     <span>本月预算</span>
@@ -199,7 +209,59 @@
         <button class="btn" style="background:var(--purple); box-shadow:0 4px 15px rgba(175,82,222,0.3);" onclick="exportToAI()">🤖 复制数据给 AI 分析</button>
     </div>
 
-    <!-- 3. 设置页 -->
+    <div id="page-health" class="page">
+        <h2>体重管理</h2>
+        
+        <div class="card">
+            <h3>📝 今日记录</h3>
+            
+            <div style="display:flex; gap:10px; margin-bottom:10px;">
+                <div style="flex:1">
+                    <label style="font-size:12px; color:var(--text-sub);">你的身高 (cm)</label>
+                    <input type="number" id="healthHeight" placeholder="例如: 175" onchange="saveHealthConfig()" style="text-align:center;">
+                </div>
+                <div style="flex:1">
+                    <label style="font-size:12px; color:var(--text-sub);">记录日期</label>
+                    <input type="date" id="healthDate" style="text-align:center;">
+                </div>
+            </div>
+
+            <div class="weight-input-group">
+                <input type="number" id="healthWeight" class="weight-input" placeholder="0" inputmode="decimal">
+                <span class="weight-unit">斤</span>
+            </div>
+
+            <button class="btn" onclick="saveWeight()">打卡体重</button>
+        </div>
+
+        <div class="card" id="bmiCard" style="display:none;">
+            <h3>📊 身体状态</h3>
+            <div class="health-grid">
+                <div class="bmi-box">
+                    <div class="bmi-val" id="dispBMI">--</div>
+                    <div class="bmi-label">BMI 指数</div>
+                </div>
+                <div class="bmi-box">
+                    <div class="bmi-val" id="dispStatus" style="font-size:18px; line-height:29px;">--</div>
+                    <div class="bmi-label">状态评价</div>
+                </div>
+            </div>
+            <div style="text-align:center; padding:10px; background:rgba(255, 59, 48, 0.1); border-radius:12px; color:var(--red); font-weight:600; font-size:14px;" id="dispDiff">
+                </div>
+        </div>
+
+        <div class="card">
+            <h3>📈 变化趋势</h3>
+            <div class="line-chart-container" id="weightChartContainer">
+                <svg id="weightSvg" class="line-chart-svg"></svg>
+            </div>
+            <div class="chart-labels">
+                <span>较早</span>
+                <span>最近</span>
+            </div>
+        </div>
+    </div>
+
     <div id="page-settings" class="page">
         <h2>偏好设置</h2>
         
@@ -236,10 +298,8 @@
         </div>
     </div>
 
-    <!-- 悬浮按钮 -->
     <div class="fab" onclick="openModal()">+</div>
 
-    <!-- 记账弹窗 -->
     <div id="modal" class="modal">
         <div class="modal-body">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
@@ -247,7 +307,6 @@
                 <span onclick="closeModal()" style="font-size:28px; color:var(--text-sub); cursor:pointer;">&times;</span>
             </div>
 
-            <!-- 收支切换 -->
             <div class="btn-group">
                 <button class="btn-toggle active" id="type-expense" onclick="switchType('expense')">支出</button>
                 <button class="btn-toggle" id="type-income" onclick="switchType('income')">收入</button>
@@ -278,13 +337,15 @@
         </div>
     </div>
 
-    <!-- 底部导航 -->
     <nav class="nav-bar">
         <div class="nav-item active" onclick="switchPage('home', this)">
             <span class="nav-icon">📝</span>明细
         </div>
         <div class="nav-item" onclick="switchPage('stats', this)">
             <span class="nav-icon">🍩</span>统计
+        </div>
+        <div class="nav-item" onclick="switchPage('health', this)">
+            <span class="nav-icon">💪</span>健康
         </div>
         <div class="nav-item" onclick="switchPage('settings', this)">
             <span class="nav-icon">⚙️</span>设置
@@ -300,6 +361,11 @@
             {name: '🥤 奶茶', price: 15, cat: '餐饮'},
             {name: '🚇 地铁', price: 4, cat: '交通'}
         ];
+        
+        // 健康数据状态
+        let weightRecords = JSON.parse(localStorage.getItem('v6_weight')) || [];
+        let healthConfig = JSON.parse(localStorage.getItem('v6_health_config')) || { height: '' };
+
         let currentType = 'expense';
 
         // 智能图标映射字典
@@ -318,15 +384,18 @@
             renderShortcutsSettings();
             document.getElementById('setMonthly').value = config.monthly;
             document.getElementById('setDaily').value = config.daily;
+            
+            // 初始化健康页数据
+            document.getElementById('healthHeight').value = healthConfig.height;
+            document.getElementById('healthDate').valueAsDate = new Date();
+            renderHealthDashboard();
         }
 
         // 获取图标
         function getIcon(cat, item) {
-            // 先尝试匹配备注里的关键词
             for (let key in iconMap) {
                 if (item.includes(key)) return iconMap[key];
             }
-            // 匹配不到则用分类
             return iconMap[cat] || '🧾';
         }
 
@@ -337,10 +406,15 @@
             document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
             btn.classList.add('active');
             document.querySelector('.fab').style.display = pageId === 'home' ? 'flex' : 'none';
+            
             if(pageId === 'stats') renderStats();
+            if(pageId === 'health') {
+                document.getElementById('healthDate').valueAsDate = new Date();
+                renderHealthDashboard();
+            }
         }
 
-        // --- 列表渲染 ---
+        // --- 列表渲染 (账本) ---
         function renderList() {
             const container = document.getElementById('listContainer');
             const keyword = document.getElementById('searchInput').value.toLowerCase();
@@ -412,7 +486,6 @@
             const curMonth = new Date().toISOString().slice(0, 7);
             const todayStr = new Date().toISOString().split('T')[0];
             
-            // 数据聚合
             let monthTotal = 0;
             const cats = {};
             records.filter(r => r.type === 'expense' && r.date.startsWith(curMonth)).forEach(r => {
@@ -422,11 +495,8 @@
             
             const todayTotal = records.filter(r => r.type === 'expense' && r.date === todayStr).reduce((a,b)=>a+b.price, 0);
 
-            // 更新预算UI
             updateBudgetUI(todayTotal, config.daily, 'Daily');
             updateBudgetUI(monthTotal, config.monthly, 'Monthly');
-
-            // 绘制甜甜圈图
             drawDonut(cats, monthTotal);
         }
 
@@ -452,7 +522,6 @@
             document.getElementById('chartLegend').innerHTML = '';
 
             if (total === 0) {
-                // 空状态圆环
                 const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
                 circle.setAttribute('cx',0); circle.setAttribute('cy',0); circle.setAttribute('r', 0.8);
                 circle.setAttribute('fill','none'); circle.setAttribute('stroke','var(--border)'); circle.setAttribute('stroke-width', 0.3);
@@ -467,9 +536,6 @@
             for (let [cat, val] of Object.entries(cats)) {
                 const pct = val / total;
                 const color = colors[colorIdx % colors.length];
-                
-                // 绘制圆环片段 (stroke-dasharray technique)
-                // 半径=0.8, 周长 = 2*PI*0.8 ≈ 5.0265
                 const r = 0.8;
                 const c = 2 * Math.PI * r;
                 const dash = pct * c;
@@ -483,7 +549,6 @@
                 circle.setAttribute('stroke-dashoffset', -acc * c);
                 circle.setAttribute('class', 'chart-path');
                 
-                // 交互点击
                 circle.onclick = () => {
                     document.getElementById('centerLabel').innerText = cat;
                     document.getElementById('centerVal').innerText = val;
@@ -492,13 +557,161 @@
 
                 svg.appendChild(circle);
                 
-                // 图例
                 const legend = document.getElementById('chartLegend');
                 legend.innerHTML += `<div style="display:flex;align-items:center;"><span style="width:8px;height:8px;background:${color};border-radius:2px;margin-right:4px;"></span>${cat}</div>`;
 
                 acc += pct;
                 colorIdx++;
             }
+        }
+
+        // --- 健康/体重逻辑 (新增) ---
+        function saveHealthConfig() {
+            const height = document.getElementById('healthHeight').value;
+            healthConfig.height = height;
+            localStorage.setItem('v6_health_config', JSON.stringify(healthConfig));
+            renderHealthDashboard();
+        }
+
+        function saveWeight() {
+            const val = parseFloat(document.getElementById('healthWeight').value);
+            const date = document.getElementById('healthDate').value;
+            const height = document.getElementById('healthHeight').value;
+            
+            if(!val || !date) { alert("请输入体重"); return; }
+            if(!height) { alert("请先输入身高以便计算 BMI"); return; }
+
+            // 检查当日是否已有记录，有则覆盖
+            const existingIdx = weightRecords.findIndex(r => r.date === date);
+            if (existingIdx > -1) {
+                weightRecords[existingIdx].weight = val;
+            } else {
+                weightRecords.push({ date: date, weight: val });
+            }
+            
+            // 按日期排序
+            weightRecords.sort((a,b) => new Date(a.date) - new Date(b.date));
+            
+            localStorage.setItem('v6_weight', JSON.stringify(weightRecords));
+            alert("💪 打卡成功！");
+            document.getElementById('healthWeight').value = '';
+            renderHealthDashboard();
+        }
+
+        function renderHealthDashboard() {
+            const bmiCard = document.getElementById('bmiCard');
+            const h = parseFloat(healthConfig.height);
+            
+            // 1. 如果没有身高或体重记录，隐藏分析卡片
+            if(!h || weightRecords.length === 0) {
+                bmiCard.style.display = 'none';
+                return;
+            }
+            bmiCard.style.display = 'block';
+
+            // 2. 取最近一次体重
+            const lastRecord = weightRecords[weightRecords.length - 1];
+            const weightJin = lastRecord.weight;
+            const weightKg = weightJin / 2;
+            const heightM = h / 100;
+            
+            // 3. BMI 计算
+            const bmi = weightKg / (heightM * heightM);
+            document.getElementById('dispBMI').innerText = bmi.toFixed(1);
+            
+            // 4. 状态判断
+            let status = '';
+            let color = '';
+            if(bmi < 18.5) { status = '偏瘦'; color = 'var(--orange)'; }
+            else if(bmi <= 24) { status = '标准'; color = 'var(--green)'; }
+            else { status = '偏胖'; color = 'var(--red)'; }
+            
+            const statusEl = document.getElementById('dispStatus');
+            statusEl.innerText = status;
+            statusEl.style.color = color;
+
+            // 5. 距离标准差值计算 (标准范围 18.5 ~ 24)
+            // 最小正常体重(kg) = 18.5 * h^2
+            // 最大正常体重(kg) = 24 * h^2
+            const minKg = 18.5 * heightM * heightM;
+            const maxKg = 24 * heightM * heightM;
+            const minJin = minKg * 2;
+            const maxJin = maxKg * 2;
+
+            const diffEl = document.getElementById('dispDiff');
+            if (bmi < 18.5) {
+                const diff = (minJin - weightJin).toFixed(1);
+                diffEl.innerText = `⚠️ 距离标准还需增重 ${diff} 斤`;
+                diffEl.style.background = 'rgba(255, 149, 0, 0.1)';
+                diffEl.style.color = 'var(--orange)';
+            } else if (bmi > 24) {
+                const diff = (weightJin - maxJin).toFixed(1);
+                diffEl.innerText = `⚠️ 距离标准还需减重 ${diff} 斤`;
+                diffEl.style.background = 'rgba(255, 59, 48, 0.1)';
+                diffEl.style.color = 'var(--red)';
+            } else {
+                diffEl.innerText = '🎉 完美！保持住你的魔鬼身材';
+                diffEl.style.background = 'rgba(52, 199, 89, 0.1)';
+                diffEl.style.color = 'var(--green)';
+            }
+
+            // 6. 绘制折线图
+            drawWeightChart();
+        }
+
+        function drawWeightChart() {
+            const svg = document.getElementById('weightSvg');
+            svg.innerHTML = '';
+            if (weightRecords.length < 2) {
+                 svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="var(--text-sub)" font-size="12">记录2天以上数据后显示趋势</text>';
+                 return;
+            }
+
+            // 取最近14条数据
+            const data = weightRecords.slice(-14);
+            const width = svg.clientWidth || 300; // 这里的宽度可能需要动态获取
+            const height = 200;
+            const padding = 20;
+
+            // 找最大最小值
+            let maxW = -Infinity, minW = Infinity;
+            data.forEach(d => {
+                if(d.weight > maxW) maxW = d.weight;
+                if(d.weight < minW) minW = d.weight;
+            });
+
+            // 增加一点缓冲空间，避免线顶到边
+            maxW += 2; 
+            minW -= 2;
+            const range = maxW - minW;
+
+            // 生成坐标点
+            let points = "";
+            const stepX = (width - padding * 2) / (data.length - 1);
+            
+            data.forEach((d, i) => {
+                const x = padding + i * stepX;
+                // Y轴反转，数值越大越靠上(y坐标越小)
+                const y = height - padding - ((d.weight - minW) / range) * (height - padding * 2);
+                points += `${x},${y} `;
+                
+                // 绘制数据点圆圈
+                const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                circle.setAttribute('cx', x); circle.setAttribute('cy', y); 
+                circle.setAttribute('class', 'line-point');
+                
+                // 点击显示数值
+                circle.onclick = () => alert(`${d.date}\n体重: ${d.weight}斤`);
+                
+                svg.appendChild(circle);
+            });
+
+            // 绘制折线
+            const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+            polyline.setAttribute('points', points);
+            polyline.setAttribute('class', 'line-path');
+            // 插入到所有圆圈之前
+            svg.insertBefore(polyline, svg.firstChild);
         }
 
         // --- 记账逻辑 ---
@@ -597,25 +810,47 @@
             navigator.clipboard.writeText(`请作为专业数据分析师分析以下账单(CSV):\n${csv}`).then(()=>alert("✅ 已复制数据！"));
         }
         function downloadBackup() {
-            const blob = new Blob([JSON.stringify(records)], {type: 'application/json'});
+            // 合并导出账单和体重数据
+            const backupData = {
+                records: records,
+                weight: weightRecords,
+                config: config,
+                healthConfig: healthConfig
+            };
+            const blob = new Blob([JSON.stringify(backupData)], {type: 'application/json'});
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            a.download = `money_backup_${new Date().toISOString().split('T')[0]}.json`;
+            a.download = `money_health_backup_${new Date().toISOString().split('T')[0]}.json`;
             a.click();
         }
         function importBackup(input) {
             const reader = new FileReader();
             reader.onload = e => {
-                records = JSON.parse(e.target.result);
+                const data = JSON.parse(e.target.result);
+                // 兼容旧版备份（如果是数组则只是账单）
+                if (Array.isArray(data)) {
+                    records = data;
+                } else {
+                    records = data.records || [];
+                    weightRecords = data.weight || [];
+                    config = data.config || config;
+                    healthConfig = data.healthConfig || healthConfig;
+                }
+                
                 localStorage.setItem('v6_records', JSON.stringify(records));
+                localStorage.setItem('v6_weight', JSON.stringify(weightRecords));
+                localStorage.setItem('v6_config', JSON.stringify(config));
+                localStorage.setItem('v6_health_config', JSON.stringify(healthConfig));
+                
                 alert("✅ 恢复成功");
-                renderList();
+                location.reload(); // 刷新以加载新数据
             };
             reader.readAsText(input.files[0]);
         }
         function clearData() {
-            if(confirm("⚠️ 确定清空所有数据？")) {
-                records = []; localStorage.removeItem('v6_records'); renderList();
+            if(confirm("⚠️ 确定清空所有数据（包括账单和体重）？")) {
+                localStorage.clear();
+                location.reload();
             }
         }
     </script>
