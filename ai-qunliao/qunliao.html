@@ -1,0 +1,793 @@
+<title>七嘴八舌</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* 布局：单屏聊天应用。顶栏（群名 + 成员）/ 消息流 / 输入区，三行网格，内容列最宽 760px 居中 */
+:root {
+  --bg: #e8edeb;
+  --surface: #ffffff;
+  --fg: #1c2422;
+  --muted: #64716d;
+  --line: #d3dcd9;
+  --accent: #24584c;
+  --accent-fg: #ffffff;
+  --note-bg: #dde4e1;
+  --warn: #9a4a12;
+  --warn-bg: #fbeee2;
+  --code-bg: #eef2f0;
+  --font-body: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --font-display: "Noto Serif SC", "Songti SC", "STSong", serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1413; --surface: #1a2120; --fg: #e2eae7; --muted: #8e9b97; --line: #2b3533;
+    --accent: #4fa88f; --accent-fg: #06120e; --note-bg: #1f2826; --warn: #f0a46c; --warn-bg: #2c1f15; --code-bg: #232c2a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1413; --surface: #1a2120; --fg: #e2eae7; --muted: #8e9b97; --line: #2b3533;
+  --accent: #4fa88f; --accent-fg: #06120e; --note-bg: #1f2826; --warn: #f0a46c; --warn-bg: #2c1f15; --code-bg: #232c2a;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font: 15px/1.6 var(--font-body); }
+* { box-sizing: border-box; }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.app { height: 100%; display: flex; flex-direction: column; }
+.app > * { flex: none; }
+.wrap { width: 100%; max-width: 760px; margin: 0 auto; }
+.gutter { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+/* 顶栏 */
+.top { border-bottom: 1px solid var(--line); background: var(--surface); }
+.top .wrap { display: flex; align-items: center; gap: 12px; padding-block: 10px; }
+.title { min-width: 0; flex: 1; }
+.title h1 { margin: 0; font: 600 20px/1.2 var(--font-display); letter-spacing: 0.04em; }
+.title p { margin: 2px 0 0; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.roster { display: flex; flex-direction: row-reverse; justify-content: flex-end; padding: 0; border: 0; background: none; }
+.roster .av { width: 28px; height: 28px; font-size: 11px; margin-left: -6px; box-shadow: 0 0 0 2px var(--surface); position: relative; }
+.roster .av.dim { opacity: 0.35; }
+.icon-btn { border: 1px solid var(--line); background: transparent; border-radius: 8px; padding: 6px 10px; font-size: 13px; }
+
+/* 头像 */
+.av { flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; color: #fff; font: 600 12px/1 var(--font-body); letter-spacing: 0.02em; background: var(--c, #777); }
+.av.me { background: var(--accent); color: var(--accent-fg); }
+
+/* 提示条 */
+.banner { background: var(--warn-bg); color: var(--warn); font-size: 13px; }
+.banner .wrap { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding-block: 8px; }
+.banner span { flex: 1 1 240px; min-width: 0; }
+.banner button { border: 1px solid currentColor; background: transparent; border-radius: 6px; padding: 3px 10px; font-size: 13px; color: inherit; }
+
+/* 消息流 */
+.list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.list .wrap { display: flex; flex-direction: column; gap: 14px; padding-block: 18px 12px; }
+.msg { display: flex; gap: 10px; align-items: flex-start; max-width: 100%; }
+.msg .body { min-width: 0; max-width: min(560px, 82%); display: grid; gap: 3px; }
+.msg .who { font-size: 12px; color: var(--muted); }
+.bubble { background: var(--surface); border-radius: 4px 14px 14px 14px; padding: 8px 12px; overflow-wrap: anywhere; min-width: 0; }
+.msg.mine { flex-direction: row-reverse; }
+.msg.mine .body { justify-items: end; }
+.msg.mine .bubble { background: var(--accent); color: var(--accent-fg); border-radius: 14px 4px 14px 14px; white-space: pre-wrap; }
+.bubble > :first-child { margin-top: 0; }
+.bubble > :last-child { margin-bottom: 0; }
+.bubble p { margin: 0 0 0.5em; }
+.bubble ul, .bubble ol { margin: 0.3em 0 0.5em; padding-left: 1.3em; }
+.bubble h1, .bubble h2, .bubble h3, .bubble h4 { font-size: 1em; margin: 0.6em 0 0.3em; }
+.bubble code { font-family: var(--font-mono); font-size: 0.88em; background: var(--code-bg); padding: 1px 4px; border-radius: 4px; }
+.bubble pre { background: var(--code-bg); padding: 8px 10px; border-radius: 8px; overflow-x: auto; }
+.bubble pre code { background: none; padding: 0; }
+.bubble table { border-collapse: collapse; display: block; overflow-x: auto; font-size: 0.92em; }
+.bubble th, .bubble td { border: 1px solid var(--line); padding: 3px 8px; }
+.bubble blockquote { margin: 0.3em 0; padding-left: 10px; border-left: 3px solid var(--line); color: var(--muted); }
+.bubble.plain { white-space: pre-wrap; }
+.bubble mjx-container[display="true"] { overflow-x: auto; overflow-y: hidden; max-width: 100%; padding: 2px 0; }
+.bubble .mention { font-weight: 600; }
+.note { align-self: center; max-width: 92%; text-align: center; font-size: 12px; color: var(--muted); background: var(--note-bg); border-radius: 10px; padding: 3px 10px; }
+
+/* 空状态 */
+.welcome { background: var(--surface); border-radius: 14px; padding: 18px; display: grid; gap: 12px; }
+.welcome h2 { margin: 0; font: 600 18px/1.35 var(--font-display); text-wrap: balance; }
+.welcome p { margin: 0; color: var(--muted); font-size: 14px; }
+.welcome .people { display: flex; flex-wrap: wrap; gap: 8px; }
+.welcome .person { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.welcome .person .av { width: 24px; height: 24px; font-size: 10px; }
+.welcome .tries { display: grid; gap: 8px; }
+.welcome .try { text-align: left; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 8px 12px; font-size: 14px; }
+
+/* 输入区 */
+.composer { background: var(--surface); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px); }
+.composer .wrap { display: grid; gap: 8px; padding-block: 8px 10px; }
+.typing { font-size: 12px; color: var(--muted); min-height: 18px; display: flex; align-items: center; gap: 6px; }
+.dots { display: inline-flex; gap: 3px; }
+.dots i { width: 4px; height: 4px; border-radius: 50%; background: currentColor; animation: blink 1.2s infinite ease-in-out; }
+.dots i:nth-child(2) { animation-delay: 0.2s; }
+.dots i:nth-child(3) { animation-delay: 0.4s; }
+@keyframes blink { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .dots i { animation: none; opacity: 0.6; } }
+.chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+.chip { flex: none; border: 1px solid var(--line); background: transparent; border-radius: 99px; padding: 2px 10px; font-size: 12px; color: var(--muted); }
+.chip:hover { color: var(--fg); }
+.inputrow { display: flex; gap: 8px; align-items: flex-end; }
+textarea#input { flex: 1; min-width: 0; resize: none; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); color: var(--fg); padding: 9px 12px; font: inherit; line-height: 1.45; max-height: 160px; }
+.send, .stop { flex: none; border: 0; border-radius: 12px; padding: 9px 16px; font-weight: 600; }
+.send { background: var(--accent); color: var(--accent-fg); }
+.send:disabled { opacity: 0.5; cursor: default; }
+.stop { background: var(--note-bg); }
+
+/* 设置 */
+dialog { border: 0; padding: 0; background: var(--surface); color: var(--fg); border-radius: 14px; width: min(560px, calc(100% - 32px)); max-height: calc(100% - 48px); }
+dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
+.sheet { display: grid; gap: 16px; padding: 18px; }
+.sheet h2 { margin: 0; font: 600 18px/1.3 var(--font-display); }
+.sheet h3 { margin: 0; font-size: 13px; color: var(--muted); font-weight: 600; letter-spacing: 0.04em; }
+.field { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.field input, .field select, .field textarea { font: inherit; font-size: 14px; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; width: 100%; }
+.field textarea { resize: vertical; min-height: 54px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.mem { display: grid; gap: 6px; padding: 10px 0; border-top: 1px solid var(--line); }
+.mem-head { display: flex; align-items: center; gap: 8px; }
+.mem-head .av { width: 26px; height: 26px; font-size: 10px; }
+.mem-head b { flex: 1; min-width: 0; font-size: 14px; }
+.mem-head small { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 45%; }
+.toggle { display: flex; align-items: center; gap: 5px; font-size: 13px; }
+.sheet-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: space-between; }
+.btn { border: 1px solid var(--line); background: transparent; border-radius: 8px; padding: 7px 14px; font-size: 14px; }
+.btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.btn.danger { color: var(--warn); border-color: currentColor; }
+</style>
+
+<div class="app">
+  <header class="top">
+    <div class="wrap gutter">
+      <div class="title">
+        <h1>七嘴八舌</h1>
+        <p id="sub">正在叫大家进群…</p>
+      </div>
+      <button class="roster" id="roster" type="button" aria-label="群成员和设置"></button>
+      <button class="icon-btn" id="openSettings" type="button">设置</button>
+    </div>
+  </header>
+  <div class="banner" id="banner" hidden><div class="wrap gutter"><span id="bannerText"></span><button id="bannerBtn" type="button" hidden></button></div></div>
+  <main class="list" id="list"><div class="wrap gutter" id="msgs"></div></main>
+  <footer class="composer">
+    <div class="wrap gutter">
+      <div class="typing" id="typing" aria-live="polite"></div>
+      <div class="chips" id="chips"></div>
+      <div class="inputrow">
+        <textarea id="input" rows="1" placeholder="说点什么，@某人 可以点名"></textarea>
+        <button class="stop" id="stop" type="button" hidden>停</button>
+        <button class="send" id="send" type="button">发送</button>
+      </div>
+    </div>
+  </footer>
+</div>
+
+<dialog id="settings">
+  <form method="dialog" class="sheet" id="settingsForm">
+    <h2>群设置</h2>
+    <div class="grid2">
+      <label class="field">你在群里的名字<input id="setNick" type="text" maxlength="12"></label>
+      <label class="field">Claude 用哪档模型
+        <select id="setTier">
+          <option value="quick">快速（回得快）</option>
+          <option value="default">标准</option>
+          <option value="complex">最强（想得久）</option>
+        </select>
+      </label>
+      <label class="field">每轮最多几个人说话
+        <select id="setMax"><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>8</option></select>
+      </label>
+      <label class="field">AI 之间接着聊几轮
+        <select id="setRounds"><option value="0">0（只回我）</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select>
+      </label>
+    </div>
+    <h3>成员和性格</h3>
+    <div id="setMembers"></div>
+    <div class="sheet-actions">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn danger" id="clearChat" type="button">清空聊天记录</button>
+        <button class="btn" id="reloadMembers" type="button">重新检查成员</button>
+      </div>
+      <button class="btn primary" id="saveSettings" type="submit">完成</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+window.MathJax = {
+  tex: { inlineMath: [["$", "$"], ["\\(", "\\)"]], displayMath: [["$$", "$$"], ["\\[", "\\]"]] },
+  svg: { fontCache: "global" },
+  startup: {
+    typeset: false,
+    ready() {
+      MathJax.startup.defaultReady();
+      MathJax.startup.promise.then(() => typesetAll());
+    },
+  },
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+<script async src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js"></script>
+<script>
+const SERVER = "qunliao";
+const STORE_KEY = "qizui-baoshe.v1";
+
+const LOOKS = {
+  claude: { abbr: "Cl", color: "#c0653b" },
+  gpt: { abbr: "GP", color: "#17806d" },
+  gemini: { abbr: "Ge", color: "#7b55c9" },
+  grok: { abbr: "Gk", color: "#5d6673" },
+  deepseek: { abbr: "DS", color: "#3f5fd4" },
+  kimi: { abbr: "Ki", color: "#c9467a" },
+  qwen: { abbr: "Qw", color: "#c7841f" },
+  glm: { abbr: "GL", color: "#2a88b8" },
+};
+const DEFAULT_PERSONAS = {
+  claude: "温柔细心，讲东西有条理，喜欢先把问题拆清楚再回答。",
+  gpt: "全能型选手，反应快，说话干脆，爱给出明确结论。",
+  gemini: "好奇心强，爱联想和举例子，经常从别的角度看问题。",
+  grok: "嘴有点毒、爱吐槽，喜欢唱反调，但吐槽要有道理。",
+  deepseek: "较真，爱算细节和推导，看到别人算错一定指出来。",
+  kimi: "温和耐心，擅长总结大家的观点，把讨论往前推。",
+  qwen: "务实接地气，说话像身边的朋友，喜欢给能直接用的建议。",
+  glm: "冷静理性，说话简洁，喜欢指出问题里被忽略的前提。",
+};
+
+// ---------- 状态 ----------
+const saved = loadStore();
+const settings = Object.assign(
+  { nickname: "我", claudeTier: "default", maxPerRound: 4, extraRounds: 1, personas: {}, off: {} },
+  saved.settings || {}
+);
+let transcript = Array.isArray(saved.transcript) ? saved.transcript : [];
+let members = [{ id: "claude", name: "Claude", model: "", status: "checking" }];
+let sample = null;
+let mcp = null;
+let permissions = null;
+let run = null;
+
+function loadStore() {
+  try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; } catch { return {}; }
+}
+function saveStore() {
+  // 系统提示（掉线、没配好之类）只在本次显示，不存
+  const keep = transcript.filter((x) => x.type === "msg").slice(-200);
+  try { localStorage.setItem(STORE_KEY, JSON.stringify({ settings, transcript: keep })); } catch {}
+}
+
+const $ = (s) => document.querySelector(s);
+const memberById = (id) => members.find((m) => m.id === id);
+const activeMembers = () => members.filter((m) => m.status === "ready" && !settings.off[m.id]);
+const nick = () => settings.nickname.trim() || "我";
+const look = (id) => LOOKS[id] || { abbr: (memberById(id)?.name || "?").slice(0, 2), color: "#777" };
+
+// ---------- 渲染 ----------
+function avatar(id) {
+  const el = document.createElement("span");
+  if (id === "user") { el.className = "av me"; el.textContent = nick().slice(0, 1); return el; }
+  const l = look(id);
+  el.className = "av";
+  el.style.setProperty("--c", l.color);
+  el.textContent = l.abbr;
+  return el;
+}
+
+function renderHeader() {
+  const roster = $("#roster");
+  roster.replaceChildren();
+  for (const m of [...members].reverse()) {
+    const a = avatar(m.id);
+    if (m.status !== "ready" || settings.off[m.id]) a.classList.add("dim");
+    a.title = m.name + (m.status === "ready" ? "" : "（不在线）");
+    roster.append(a);
+  }
+  const on = activeMembers();
+  const checking = members.some((m) => m.status === "checking");
+  $("#sub").textContent = checking && !on.length
+    ? "正在叫大家进群…"
+    : `${on.length + 1} 人在群里 · ${on.map((m) => m.name).join("、") || "暂时没有 AI 在线"}`;
+  renderChips();
+}
+
+function renderChips() {
+  const chips = $("#chips");
+  chips.replaceChildren();
+  const on = activeMembers();
+  if (on.length > 1) chips.append(chip("@所有人"));
+  for (const m of on) chips.append(chip("@" + m.name));
+}
+function chip(label) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "chip";
+  b.textContent = label;
+  b.onclick = () => insertAtCursor(label + " ");
+  return b;
+}
+
+function renderAll() {
+  const box = $("#msgs");
+  box.replaceChildren();
+  if (!transcript.length) box.append(welcome());
+  for (const entry of transcript) box.append(renderEntry(entry));
+  typesetAll();
+  scrollToBottom(true);
+}
+
+function welcome() {
+  const card = document.createElement("section");
+  card.className = "welcome";
+  card.innerHTML = '<h2>七个 AI 加一个 Claude，都在这个群里</h2><p>你发一句，大家轮流接话，还会互相补充、抬杠。@某人 可以点名让它回答。</p><div class="people"></div><div class="tries"></div>';
+  const people = card.querySelector(".people");
+  for (const id of Object.keys(LOOKS)) {
+    const p = document.createElement("span");
+    p.className = "person";
+    p.append(avatar(id), document.createTextNode(memberById(id)?.name || defaultName(id)));
+    people.append(p);
+  }
+  const tries = [
+    "设 X₁,…,Xₙ 是来自 N(μ, σ²) 的样本，σ² 的极大似然估计是无偏的吗？大家各自说说，再互相挑错。",
+    "@Grok @DeepSeek 你们俩辩论一下：考研数学三该先刷题还是先把课本吃透？",
+    "今晚吃什么？每人推荐一个，最后投票。",
+  ];
+  for (const t of tries) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "try";
+    b.textContent = t;
+    b.onclick = () => { $("#input").value = t; autosize(); $("#input").focus(); };
+    card.querySelector(".tries").append(b);
+  }
+  return card;
+}
+function defaultName(id) {
+  return { claude: "Claude", gpt: "GPT", gemini: "Gemini", grok: "Grok", deepseek: "DeepSeek", kimi: "Kimi", qwen: "Qwen", glm: "GLM" }[id] || id;
+}
+
+function renderEntry(entry) {
+  if (entry.type === "note") {
+    const n = document.createElement("div");
+    n.className = "note";
+    n.textContent = entry.text;
+    return n;
+  }
+  const mine = entry.speaker === "user";
+  const row = document.createElement("div");
+  row.className = "msg" + (mine ? " mine" : "");
+  const body = document.createElement("div");
+  body.className = "body";
+  const who = document.createElement("div");
+  who.className = "who";
+  who.textContent = mine ? nick() : entry.name;
+  if (entry.ts) who.title = new Date(entry.ts).toLocaleString();
+  const bubble = document.createElement("div");
+  bubble.className = "bubble";
+  if (mine) bubble.textContent = entry.text;
+  else renderRich(bubble, entry.text);
+  body.append(who, bubble);
+  row.append(avatar(entry.speaker), body);
+  return row;
+}
+
+const MATH_RE = /\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|\$(?=\S)[^$\n]+?\$/g;
+function renderRich(el, text) {
+  if (!window.marked || !window.DOMPurify) { el.textContent = text; el.classList.add("plain"); return; }
+  const maths = [];
+  const src = text.replace(MATH_RE, (m) => { maths.push(m); return `MATHSLOT${maths.length - 1}X`; });
+  let html = DOMPurify.sanitize(marked.parse(src, { breaks: true, gfm: true }));
+  html = html.replace(/MATHSLOT(\d+)X/g, (_, i) => escapeHtml(maths[Number(i)]));
+  html = html.replace(/(^|[\s>（(])(@[^\s<@，。,.!?！？:：]{1,16})/g, '$1<span class="mention">$2</span>');
+  el.innerHTML = html;
+  if (maths.length) el.dataset.math = "1";
+}
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function typesetAll() {
+  if (!window.MathJax || !MathJax.typesetPromise) return;
+  const nodes = [...document.querySelectorAll('.bubble[data-math="1"]')];
+  if (nodes.length) MathJax.typesetPromise(nodes).catch(() => {});
+}
+function typeset(el) {
+  if (el.querySelector && el.querySelector('[data-math="1"]') && window.MathJax?.typesetPromise) {
+    MathJax.typesetPromise([el]).then(() => scrollToBottom()).catch(() => {});
+  }
+}
+
+function nearBottom() {
+  const l = $("#list");
+  return l.scrollHeight - l.scrollTop - l.clientHeight < 120;
+}
+function scrollToBottom(force) {
+  const l = $("#list");
+  if (force || nearBottom()) l.scrollTop = l.scrollHeight;
+}
+
+function addEntry(entry) {
+  const stick = nearBottom();
+  transcript.push(entry);
+  saveStore();
+  const box = $("#msgs");
+  box.querySelector(".welcome")?.remove();
+  const el = renderEntry(entry);
+  box.append(el);
+  typeset(el);
+  if (stick || entry.speaker === "user") scrollToBottom(true);
+}
+function note(text) { addEntry({ type: "note", text, ts: Date.now() }); }
+
+function setTyping(m) {
+  const t = $("#typing");
+  t.replaceChildren();
+  if (!m) return;
+  const dots = document.createElement("span");
+  dots.className = "dots";
+  dots.innerHTML = "<i></i><i></i><i></i>";
+  t.append(document.createTextNode(m.name + " 正在输入"), dots);
+}
+
+function setRunning(on) {
+  $("#stop").hidden = !on;
+}
+
+function showBanner(text, action) {
+  $("#banner").hidden = false;
+  $("#bannerText").textContent = text;
+  const b = $("#bannerBtn");
+  b.hidden = !action;
+  if (action) { b.textContent = action.label; b.onclick = action.run; }
+}
+function hideBanner() { $("#banner").hidden = true; }
+
+// ---------- 连接 ----------
+async function init() {
+  renderAll();
+  renderHeader();
+  const use = window.claude && window.claude.use ? (n) => window.claude.use(n).catch(() => null) : async () => null;
+  const [s, m, p] = await Promise.all([use("sample"), use("mcp"), use("permissions")]);
+  sample = s;
+  mcp = m;
+  permissions = p;
+  memberById("claude").status = sample ? "ready" : "unavailable";
+  if (!sample) note("Claude 这次进不了群：这个页面暂时调用不了 Claude。");
+  renderHeader();
+  if (!mcp) {
+    setOthersStatus("unavailable");
+    showBanner("这个页面现在用不了连接器，只有 Claude 能说话。请在 claude.ai 里打开这个页面。");
+    return;
+  }
+  await loadMembers();
+}
+
+function setOthersStatus(status) {
+  for (const m of members) if (m.id !== "claude") m.status = status;
+  renderHeader();
+}
+
+async function loadMembers() {
+  try {
+    const r = await mcp.callTool(SERVER, "list_members", {});
+    const list = (r.payload && r.payload.members) || [];
+    const claude = memberById("claude");
+    members = [claude, ...list.map((x) => ({ id: x.id, name: x.name, model: x.model, status: x.enabled && x.ready ? "ready" : "unready" }))];
+    hideBanner();
+    const missing = members.filter((x) => x.status === "unready").map((x) => x.name);
+    if (missing.length) note(`${missing.join("、")} 还没在中转站配好 key 或模型，先不进群。`);
+  } catch (e) {
+    setOthersStatus("unavailable");
+    connectorProblem(e);
+  }
+  renderHeader();
+  if (!transcript.length) renderAll();
+}
+
+function connectorProblem(e) {
+  const retry = { label: "重试", run: () => { hideBanner(); loadMembers(); } };
+  switch (e && e.code) {
+    case "server_not_connected":
+      return showBanner(`没找到名叫 ${SERVER} 的连接器。请在 claude.ai → 设置 → 连接器里添加它，名字要一模一样。`, retry);
+    case "needs_reauth":
+      return showBanner(`${SERVER} 连接器需要重新连接：claude.ai → 设置 → 连接器。`, retry);
+    case "selection_required":
+      return showBanner(`你有不止一个叫 ${SERVER} 的连接器，请在弹出的提示里选一个。`, retry);
+    case "not_in_manifest":
+    case "approval_required":
+    case "blocked_by_policy":
+      return showBanner(`这个页面还没被允许使用 ${SERVER} 连接器，其他 AI 进不了群。`, {
+        label: "打开权限设置",
+        run: async () => {
+          try { if (permissions) await permissions.manage(); } catch {}
+          hideBanner();
+          loadMembers();
+        },
+      });
+    case "server_unavailable":
+      return showBanner("中转站暂时连不上，可能是 Cloudflare 那边抽风。", retry);
+    case "tool_error":
+      return showBanner("中转站出错：" + (e.message || ""), retry);
+    default:
+      return showBanner("连接中转站失败：" + ((e && e.message) || "未知错误"), retry);
+  }
+}
+
+// ---------- 聊天调度 ----------
+function send() {
+  const box = $("#input");
+  const text = box.value.trim();
+  if (!text) return;
+  box.value = "";
+  autosize();
+  addEntry({ type: "msg", speaker: "user", name: nick(), text, ts: Date.now() });
+  converse();
+}
+
+function stopRun() {
+  if (!run) return;
+  run.stopped = true;
+  run.ctl.abort();
+  run = null;
+  setRunning(false);
+  setTyping(null);
+}
+
+function mentionsIn(text) {
+  const on = activeMembers();
+  if (/@(所有人|大家|全体|all\b)/i.test(text)) return on.map((m) => m.id);
+  const lower = text.toLowerCase();
+  return on.filter((m) => lower.includes("@" + m.name.toLowerCase()) || lower.includes("@" + m.id)).map((m) => m.id);
+}
+
+function shuffle(a) {
+  const r = [...a];
+  for (let i = r.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [r[i], r[j]] = [r[j], r[i]]; }
+  return r;
+}
+
+async function converse() {
+  stopRun();
+  const me = { ctl: new AbortController(), stopped: false, skip: new Set() };
+  run = me;
+  setRunning(true);
+  try {
+    const rounds = 1 + Number(settings.extraRounds);
+    const limit = Number(settings.maxPerRound);
+    let mentionSource = transcript.length - 1; // 第一轮看用户刚发的那条
+    for (let r = 0; r < rounds; r++) {
+      const on = activeMembers().filter((m) => !me.skip.has(m.id));
+      if (!on.length) { if (r === 0) note("群里现在没有能说话的 AI。"); break; }
+      const recent = transcript.slice(mentionSource).filter((x) => x.type === "msg");
+      const must = [];
+      for (const x of recent) for (const id of mentionsIn(x.text)) if (id !== x.speaker && !must.includes(id)) must.push(id);
+      let order = shuffle(on.map((m) => m.id)).filter((id) => !must.includes(id));
+      order = [...must.filter((id) => on.some((m) => m.id === id)), ...order];
+      // 后面几轮只问一部分人，免得一圈 PASS 太慢
+      if (r > 0) order = order.slice(0, Math.max(must.length, limit + 1));
+      const roundStart = transcript.length;
+      let spoke = 0;
+      let asked = 0;
+      for (const id of order) {
+        if (me.stopped) return;
+        if (spoke >= limit && !must.includes(id)) break;
+        const last = [...transcript].reverse().find((x) => x.type === "msg");
+        if (last && last.speaker === id) continue;
+        const forced = must.includes(id) || (r === 0 && !must.length && asked === 0);
+        asked++;
+        const text = await speak(id, { round: r, forced }, me);
+        if (me.stopped) return;
+        if (text) { addEntry({ type: "msg", speaker: id, name: memberById(id).name, text, ts: Date.now() }); spoke++; }
+      }
+      if (!spoke) break;
+      mentionSource = roundStart;
+    }
+  } finally {
+    if (run === me) { run = null; setRunning(false); setTyping(null); }
+  }
+}
+
+async function speak(id, ctx, me) {
+  const m = memberById(id);
+  setTyping(m);
+  try {
+    const { system, turns } = buildPrompt(m, ctx);
+    let raw;
+    if (id === "claude") {
+      const res = await sample([{ role: "user", content: system }, ...turns], {
+        cache: false,
+        signal: me.ctl.signal,
+        modelTier: settings.claudeTier,
+      });
+      raw = res.text;
+    } else {
+      const res = await mcp.callTool(SERVER, "chat", { member: id, messages: [{ role: "system", content: system }, ...turns] }, { signal: me.ctl.signal });
+      raw = res.payload && typeof res.payload === "object" ? res.payload.text : "";
+    }
+    return clean(raw || "", m);
+  } catch (e) {
+    if (me.stopped || (e && e.code === "cancelled")) return null;
+    me.skip.add(id);
+    memberFailed(m, e);
+    return null;
+  } finally {
+    if (run === me) setTyping(null);
+  }
+}
+
+function memberFailed(m, e) {
+  const code = e && e.code;
+  if (m.id === "claude") {
+    if (code === "not_granted" || code === "sampling_disabled" || code === "not_declared") {
+      m.status = "unavailable";
+      renderHeader();
+      return note("Claude 被请出群了：这个页面没有拿到使用 Claude 的许可。");
+    }
+    if (code === "rate_limited") return note("Claude 说太累了：额度暂时用完或发得太快，过会儿再叫它。");
+    if (code === "refused") return note("Claude 这条不方便回答，跳过了。");
+    return note("Claude 掉线了一下（" + (code || "未知错误") + "）。");
+  }
+  if (code === "tool_error") return note(e.message || `${m.name} 没回上话。`);
+  if (["server_not_connected", "needs_reauth", "not_in_manifest", "approval_required", "selection_required", "blocked_by_policy"].includes(code)) {
+    setOthersStatus("unavailable");
+    return connectorProblem(e);
+  }
+  if (code === "server_unavailable") return note(`${m.name} 没回上话：中转站暂时连不上。`);
+  return note(`${m.name} 没回上话（${code || "未知错误"}）。`);
+}
+
+function buildPrompt(m, ctx) {
+  const others = activeMembers().map((x) => x.name);
+  const persona = (settings.personas[m.id] || "").trim() || DEFAULT_PERSONAS[m.id] || "说话自然，有自己的观点。";
+  const system = [
+    `你在一个叫“七嘴八舌”的微信群里。群里有一位真人「${nick()}」，还有这些 AI 群友：${others.join("、")}。你是 ${m.name}。`,
+    `你的性格：${persona}`,
+    "群聊规则：",
+    "- 像真人发微信一样说话：口语、自然，一般 1 到 3 句。只有讲题、推导，或者有人明确要详细解释时才写长；写长时可以用 Markdown，公式用 LaTeX（行内 $...$，独立成行 $$...$$）。",
+    "- 可以 @别人 回应、追问、反驳或补充。不要复述别人说过的内容，不要客套地附和“同意楼上”。",
+    "- 有不同意见就直说，并给出理由；发现别人说错了要指出来。",
+    "- 只写你自己的这一条消息：不要替别人说话，不要在开头写自己的名字。",
+    "- 如果你没有新的、有价值的话可说，只回复 [PASS]。",
+  ].join("\n");
+
+  // 历史：自己说过的是 assistant，其他人说的是 user（带名字）
+  const msgs = transcript.filter((x) => x.type === "msg");
+  const picked = [];
+  let budget = 24000;
+  for (let i = msgs.length - 1; i >= 0 && picked.length < 40; i--) {
+    budget -= msgs[i].text.length + 12;
+    if (budget < 0 && picked.length) break;
+    picked.unshift(msgs[i]);
+  }
+  const turns = [];
+  const push = (role, content) => {
+    const last = turns[turns.length - 1];
+    if (last && last.role === role) last.content += "\n\n" + content;
+    else turns.push({ role, content });
+  };
+  for (const x of picked) {
+    if (x.speaker === m.id) push("assistant", x.text);
+    else push("user", `【${x.speaker === "user" ? nick() : x.name}】${x.text}`);
+  }
+  if (!turns.length || turns[0].role !== "user") turns.unshift({ role: "user", content: "（以下是群聊记录）" });
+
+  let nudge;
+  if (ctx.round === 0) nudge = ctx.forced ? `（轮到你了，请回复${nick()}刚才的消息。）` : `（${nick()}刚发了消息。想说就说；没有新内容就只回复 [PASS]。）`;
+  else nudge = ctx.forced ? "（有人 @ 了你，请回应。）" : "（大家都说过了。只有想回应、反驳或补充某个人的时候才发言，否则只回复 [PASS]。）";
+  push("user", nudge);
+  return { system, turns };
+}
+
+function clean(raw, m) {
+  let t = String(raw).replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  // 去掉模型模仿的名字前缀
+  const names = [m.name, m.id].map(escapeRe).join("|");
+  t = t.replace(new RegExp(`^(【(${names})】|(${names})\\s*[:：])\\s*`, "i"), "");
+  // 如果它顺手替别人说话，从第一个别人的名字开始截断
+  const otherNames = members.filter((x) => x.id !== m.id).map((x) => escapeRe(x.name)).concat(escapeRe(nick()));
+  const cut = t.search(new RegExp(`\\n\\s*【(${otherNames.join("|")})】`));
+  if (cut > 0) t = t.slice(0, cut).trim();
+  if (/^\[?\s*PASS\s*\]?[。.!！]?$/i.test(t)) return null;
+  t = t.replace(/\[PASS\]/gi, "").trim();
+  return t || null;
+}
+function escapeRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+
+// ---------- 输入 ----------
+function autosize() {
+  const t = $("#input");
+  t.style.height = "auto";
+  t.style.height = Math.min(t.scrollHeight + 2, 160) + "px";
+}
+function insertAtCursor(s) {
+  const t = $("#input");
+  const a = t.selectionStart ?? t.value.length;
+  const b = t.selectionEnd ?? t.value.length;
+  const before = t.value.slice(0, a);
+  const pad = before && !/\s$/.test(before) ? " " : "";
+  t.value = before + pad + s + t.value.slice(b);
+  const pos = a + pad.length + s.length;
+  t.setSelectionRange(pos, pos);
+  t.focus();
+  autosize();
+}
+
+$("#input").addEventListener("input", autosize);
+$("#input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); send(); }
+});
+$("#send").onclick = send;
+$("#stop").onclick = () => { stopRun(); note("你按了停，大家先安静一下。"); };
+
+// ---------- 设置 ----------
+function openSettings() {
+  $("#setNick").value = settings.nickname;
+  $("#setTier").value = settings.claudeTier;
+  $("#setMax").value = String(settings.maxPerRound);
+  $("#setRounds").value = String(settings.extraRounds);
+  const box = $("#setMembers");
+  box.replaceChildren();
+  for (const m of members) {
+    const row = document.createElement("div");
+    row.className = "mem";
+    row.innerHTML = '<div class="mem-head"><b></b><small></small><label class="toggle"><input type="checkbox">在群里</label></div><label class="field">性格<textarea rows="2"></textarea></label>';
+    row.querySelector(".mem-head").prepend(avatar(m.id));
+    row.querySelector("b").textContent = m.name;
+    const status = { ready: m.model || "在线", unready: "中转站没配好", unavailable: "连不上", checking: "检查中" }[m.status] || m.status;
+    row.querySelector("small").textContent = status;
+    const cb = row.querySelector("input");
+    cb.id = "on-" + m.id;
+    cb.checked = !settings.off[m.id];
+    cb.disabled = m.status !== "ready";
+    const ta = row.querySelector("textarea");
+    ta.id = "persona-" + m.id;
+    ta.value = settings.personas[m.id] || DEFAULT_PERSONAS[m.id] || "";
+    row.dataset.id = m.id;
+    box.append(row);
+  }
+  const clear = $("#clearChat");
+  clear.textContent = "清空聊天记录";
+  clear.dataset.armed = "";
+  const d = $("#settings");
+  if (d.showModal) d.showModal(); else d.setAttribute("open", "");
+}
+
+function applySettings() {
+  settings.nickname = $("#setNick").value.trim().slice(0, 12) || "我";
+  settings.claudeTier = $("#setTier").value;
+  settings.maxPerRound = Number($("#setMax").value);
+  settings.extraRounds = Number($("#setRounds").value);
+  for (const row of document.querySelectorAll("#setMembers .mem")) {
+    const id = row.dataset.id;
+    const cb = row.querySelector("input");
+    if (!cb.disabled) settings.off[id] = !cb.checked;
+    const v = row.querySelector("textarea").value.trim();
+    if (v && v !== DEFAULT_PERSONAS[id]) settings.personas[id] = v; else delete settings.personas[id];
+  }
+  saveStore();
+  renderHeader();
+}
+
+$("#openSettings").onclick = openSettings;
+$("#roster").onclick = openSettings;
+$("#settingsForm").addEventListener("submit", applySettings);
+$("#reloadMembers").onclick = async () => {
+  applySettings();
+  $("#settings").close();
+  if (mcp) { hideBanner(); await loadMembers(); }
+};
+$("#clearChat").onclick = (e) => {
+  const b = e.currentTarget;
+  if (!b.dataset.armed) { b.dataset.armed = "1"; b.textContent = "再点一次确认清空"; return; }
+  stopRun();
+  transcript = [];
+  saveStore();
+  $("#settings").close();
+  renderAll();
+};
+
+init();
+</script>
