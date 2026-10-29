@@ -1,13 +1,15 @@
 // AI 群聊中转站：一个 Cloudflare Worker，做两件事
 //   1. /admin            —— 带密码的设置页，填写和更换各家 API key
-//   2. /mcp/<MCP_SECRET> —— MCP 连接器入口，claude.ai 的群聊页面通过它调用各家模型
+//   2. /mcp      —— MCP 连接器入口，claude.ai 的群聊页面通过它调用各家模型
+//                   请求头 X-Qunliao-Key 必须等于 MCP_SECRET
 //
 // 需要的绑定（在 Cloudflare 后台设置）：
 //   KV              KV 命名空间，存配置和 key
 //   ADMIN_PASSWORD  机密，设置页密码
-//   MCP_SECRET      机密，一串随机字符，拼进连接器网址里当门票
+//   MCP_SECRET      机密，一串随机字符，连接器的门票，放在请求头里
 
 const OPENROUTER = "https://openrouter.ai/api/v1";
+const TICKET_HEADER = "X-Qunliao-Key";
 
 // 群成员的初始配置。OpenRouter 的三家 key 留空时用共享的 OpenRouter key。
 const DEFAULT_MEMBERS = [
@@ -37,8 +39,9 @@ export default {
     try {
       if (path === "/" || path === "/admin") return html(ADMIN_PAGE);
       if (path.startsWith("/admin/api/")) return await handleAdmin(request, env, path.slice(11), url);
-      if (path.startsWith("/mcp/")) {
-        if (!env.MCP_SECRET || !(await same(path.slice(5), env.MCP_SECRET))) return new Response("Not found", { status: 404 });
+      if (path === "/mcp") {
+        const ticket = request.headers.get(TICKET_HEADER) || "";
+        if (!env.MCP_SECRET || !(await same(ticket, env.MCP_SECRET))) return new Response("Unauthorized", { status: 401 });
         return await handleMcp(request, env);
       }
       return new Response("Not found", { status: 404 });
@@ -91,9 +94,10 @@ async function callModel(cfg, m, messages, opts = {}) {
 
   let res;
   try {
-    res = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(110000) });
+    res = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(50000) });
   } catch (e) {
-    throw new Error(`${m.name} 连不上（${e.name === "TimeoutError" ? "超时" : "网络错误"}），检查接口地址`);
+    if (e.name === "TimeoutError") throw new Error(`${m.name} 50 秒没回复，这次先跳过`);
+    throw new Error(`${m.name} 连不上（网络错误），检查接口地址`);
   }
   const raw = await res.text();
   let data = null;
@@ -102,8 +106,12 @@ async function callModel(cfg, m, messages, opts = {}) {
     const detail = (data && (data.error?.message || data.message || data.msg)) || raw.slice(0, 200);
     throw new Error(`${m.name} ${explainStatus(res.status)}（HTTP ${res.status}：${detail}）`);
   }
-  const text = data?.choices?.[0]?.message?.content;
-  if (typeof text !== "string" || !text.trim()) throw new Error(`${m.name} 返回了空内容`);
+  const choice = data?.choices?.[0];
+  const text = choice?.message?.content;
+  if (typeof text !== "string" || !text.trim()) {
+    if (choice?.finish_reason === "length") throw new Error(`${m.name} 思考把长度额度用完了，没来得及回答（调大 max_tokens 或不设）`);
+    throw new Error(`${m.name} 返回了空内容`);
+  }
   return { text: text.trim(), model: data.model || m.model, usage: data.usage || null };
 }
 
@@ -127,7 +135,9 @@ async function handleAdmin(request, env, action, url) {
     return json({
       openrouter_key: mask(cfg.openrouter_key),
       members: cfg.members.map((m) => ({ ...m, api_key: mask(m.api_key), ready: isReady(cfg, m), hint: MODEL_HINTS[m.id] })),
-      connector_url: env.MCP_SECRET ? `${url.origin}/mcp/${env.MCP_SECRET}` : null,
+      connector_url: `${url.origin}/mcp`,
+      ticket_header: TICKET_HEADER,
+      ticket: env.MCP_SECRET || null,
     });
   }
 
@@ -154,7 +164,7 @@ async function handleAdmin(request, env, action, url) {
     const m = cfg.members.find((x) => x.id === id);
     if (!m) return json({ error: "没有这个成员" }, 400);
     try {
-      const r = await callModel({ ...cfg }, { ...m, enabled: true }, [{ role: "user", content: "用一句话打个招呼，不超过15个字。" }], { max_tokens: 60 });
+      const r = await callModel({ ...cfg }, { ...m, enabled: true }, [{ role: "user", content: "用一句话打个招呼，不超过15个字。" }]);
       return json({ ok: true, text: r.text, model: r.model });
     } catch (e) {
       return json({ ok: false, error: e.message });
@@ -329,10 +339,17 @@ code{font-family:ui-monospace,Menlo,monospace;font-size:13px;word-break:break-al
 
 <div id="app" hidden style="display:grid;gap:16px">
   <div class="card">
-    <div class="head"><b>连接器网址</b></div>
-    <p class="msg">在 claude.ai → 设置 → 连接器 → 添加自定义连接器，把下面这串粘进去。不要发给别人。</p>
+    <div class="head"><b>添加连接器用的信息</b></div>
+    <p class="msg">claude.ai → 设置 → 连接器 → 添加自定义连接器。认证选 No sign-in，在 Request headers 里加一个请求头。</p>
+    <div class="msg">网址（可以截图）</div>
     <code id="connUrl"></code>
-    <div class="row"><button type="button" class="small" id="copyConn">复制</button></div>
+    <div class="row"><button type="button" class="small" data-copy="connUrl">复制网址</button></div>
+    <div class="msg">请求头名</div>
+    <code id="ticketName"></code>
+    <div class="row"><button type="button" class="small" data-copy="ticketName">复制请求头名</button></div>
+    <div class="msg">请求头值（门票，不要截图、不要发给别人）</div>
+    <code id="ticketMasked"></code>
+    <div class="row"><button type="button" class="small" id="copyTicket">复制门票</button></div>
   </div>
   <div class="card">
     <div class="head"><b>OpenRouter 共享 key</b></div>
@@ -362,7 +379,9 @@ async function load() {
   cleared = new Set();
   $("#login").hidden = true;
   $("#app").hidden = false;
-  $("#connUrl").textContent = state.connector_url || "还没设置 MCP_SECRET 机密";
+  $("#connUrl").textContent = state.connector_url;
+  $("#ticketName").textContent = state.ticket_header;
+  $("#ticketMasked").textContent = state.ticket ? "•".repeat(12) + "（已隐藏，用按钮复制）" : "还没设置 MCP_SECRET 机密";
   $("#orKey").value = "";
   $("#orKey").placeholder = state.openrouter_key ? "已保存 " + state.openrouter_key + "，留空不改" : "sk-or-...";
   const box = $("#members");
@@ -433,10 +452,16 @@ async function save(quiet) {
 
 $("#orClear").onclick = () => { cleared.add("__or"); $("#orKey").value = ""; $("#orKey").placeholder = "保存后清除"; };
 $("#save").onclick = () => save(false).catch(() => {});
-$("#copyConn").onclick = async () => {
-  try { await navigator.clipboard.writeText($("#connUrl").textContent); $("#copyConn").textContent = "已复制"; }
-  catch { getSelection().selectAllChildren($("#connUrl")); }
-};
+async function copy(btn, text, fallbackEl) {
+  try { await navigator.clipboard.writeText(text); btn.textContent = "已复制"; setTimeout(() => (btn.textContent = btn.dataset.label), 1500); }
+  catch { if (fallbackEl) getSelection().selectAllChildren(fallbackEl); else btn.textContent = "复制失败，请换个浏览器"; }
+}
+for (const b of document.querySelectorAll("[data-copy]")) {
+  b.dataset.label = b.textContent;
+  b.onclick = () => copy(b, $("#" + b.dataset.copy).textContent, $("#" + b.dataset.copy));
+}
+$("#copyTicket").dataset.label = $("#copyTicket").textContent;
+$("#copyTicket").onclick = () => state && state.ticket && copy($("#copyTicket"), state.ticket);
 $("#login").onsubmit = async (e) => {
   e.preventDefault();
   pw = $("#pw").value;
