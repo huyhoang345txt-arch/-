@@ -50,7 +50,9 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .roster { display: flex; flex-direction: row-reverse; justify-content: flex-end; padding: 0; border: 0; background: none; }
 .roster .av { width: 28px; height: 28px; font-size: 11px; margin-left: -6px; box-shadow: 0 0 0 2px var(--surface); position: relative; }
 .roster .av.dim { opacity: 0.35; }
-.icon-btn { border: 1px solid var(--line); background: transparent; border-radius: 8px; padding: 6px 10px; font-size: 13px; }
+.icon-btn { flex: none; border: 1px solid var(--line); background: transparent; border-radius: 8px; padding: 6px 10px; font-size: 13px; }
+.top-actions { display: flex; gap: 6px; }
+@media (max-width: 560px) { .roster { display: none; } }
 
 /* 头像 */
 .av { flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; color: #fff; font: 600 12px/1 var(--font-body); letter-spacing: 0.02em; background: var(--c, #777); }
@@ -139,6 +141,16 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
 .btn { border: 1px solid var(--line); background: transparent; border-radius: 8px; padding: 7px 14px; font-size: 14px; }
 .btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
 .btn.danger { color: var(--warn); border-color: currentColor; }
+.mem-body { display: grid; grid-template-columns: 7.5em 1fr; gap: 10px; }
+@media (max-width: 420px) { .mem-body { grid-template-columns: 1fr; } }
+.chatlist { display: grid; gap: 8px; }
+.chatitem { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+.chatitem.current { border-color: var(--accent); }
+.chatitem .open { flex: 1; min-width: 0; text-align: left; border: 0; background: none; padding: 0; display: grid; gap: 2px; }
+.chatitem .open b { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chatitem .open small { font-size: 12px; color: var(--muted); }
+.chatitem .del { flex: none; border: 1px solid var(--line); background: transparent; border-radius: 6px; padding: 3px 8px; font-size: 12px; color: var(--muted); }
+.chatitem .del.armed { color: var(--warn); border-color: currentColor; }
 </style>
 
 <div class="app">
@@ -149,7 +161,11 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
         <p id="sub">正在叫大家进群…</p>
       </div>
       <button class="roster" id="roster" type="button" aria-label="群成员和设置"></button>
-      <button class="icon-btn" id="openSettings" type="button">设置</button>
+      <div class="top-actions">
+        <button class="icon-btn" id="newChat" type="button">新聊天</button>
+        <button class="icon-btn" id="openChats" type="button">记录</button>
+        <button class="icon-btn" id="openSettings" type="button">设置</button>
+      </div>
     </div>
   </header>
   <div class="banner" id="banner" hidden><div class="wrap gutter"><span id="bannerText"></span><button id="bannerBtn" type="button" hidden></button></div></div>
@@ -172,13 +188,6 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
     <h2>群设置</h2>
     <div class="grid2">
       <label class="field">你在群里的名字<input id="setNick" type="text" maxlength="12"></label>
-      <label class="field">Claude 用哪档模型
-        <select id="setTier">
-          <option value="quick">快速（回得快）</option>
-          <option value="default">标准</option>
-          <option value="complex">最强（想得久）</option>
-        </select>
-      </label>
       <label class="field">每轮最多几个人说话
         <select id="setMax"><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>8</option></select>
       </label>
@@ -186,14 +195,24 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
         <select id="setRounds"><option value="0">0（只回我）</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select>
       </label>
     </div>
-    <h3>成员和性格</h3>
+    <h3>成员、思考强度和性格</h3>
+    <p class="field" style="margin:0">思考越强答得越好，但回得更慢、更费额度。“默认”就是不额外指定，按各家自己的默认方式来。</p>
     <div id="setMembers"></div>
     <div class="sheet-actions">
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn danger" id="clearChat" type="button">清空聊天记录</button>
-        <button class="btn" id="reloadMembers" type="button">重新检查成员</button>
-      </div>
+      <button class="btn" id="reloadMembers" type="button">重新检查成员</button>
       <button class="btn primary" id="saveSettings" type="submit">完成</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="chats">
+  <form method="dialog" class="sheet">
+    <h2>聊天记录</h2>
+    <p class="field" style="margin:0">每个聊天各自独立，AI 只看得到当前聊天的内容。记录只存在这个浏览器里。</p>
+    <div class="chatlist" id="chatList"></div>
+    <div class="sheet-actions">
+      <button class="btn" id="newChatFromList" type="button">开新聊天</button>
+      <button class="btn primary" type="submit">关闭</button>
     </div>
   </form>
 </dialog>
@@ -239,26 +258,76 @@ const DEFAULT_PERSONAS = {
   glm: "冷静理性，说话简洁，喜欢指出问题里被忽略的前提。",
 };
 
+// 思考强度：Claude 走套餐里的档位，其他人通过中转站发给各家
+const CLAUDE_THINK = {
+  fast: { label: "快速（不思考）", opts: { modelTier: "quick" } },
+  low: { label: "低", opts: { modelTier: "default", effort: "low" } },
+  medium: { label: "中", opts: { modelTier: "default", effort: "medium" } },
+  high: { label: "高", opts: { modelTier: "default", effort: "high" } },
+  max: { label: "最强（想得久）", opts: { modelTier: "complex", effort: "high" } },
+};
+const OTHER_THINK = { auto: "默认", off: "关", low: "低", medium: "中", high: "高" };
+// 想得越久，给的等待时间越长（秒）
+const WAIT_S = { auto: 90, off: 50, low: 70, medium: 100, high: 115 };
+const LONG_CHAT = 60;
+
 // ---------- 状态 ----------
 const saved = loadStore();
 const settings = Object.assign(
-  { nickname: "我", claudeTier: "default", maxPerRound: 4, extraRounds: 1, personas: {}, off: {} },
+  { nickname: "我", maxPerRound: 4, extraRounds: 1, personas: {}, off: {}, thinking: {} },
   saved.settings || {}
 );
-let transcript = Array.isArray(saved.transcript) ? saved.transcript : [];
+if (settings.claudeTier && !settings.thinking.claude) {
+  settings.thinking.claude = { quick: "fast", default: "medium", complex: "max" }[settings.claudeTier] || "medium";
+}
+delete settings.claudeTier;
+
+let chats = Array.isArray(saved.chats) ? saved.chats : [];
+if (!chats.length && Array.isArray(saved.transcript) && saved.transcript.length) {
+  chats.push({ ...newChatObj(), createdAt: saved.transcript[0].ts || Date.now(), transcript: saved.transcript });
+}
+let currentId = saved.currentId;
+if (!chats.some((c) => c.id === currentId)) {
+  if (!chats.length) chats.push(newChatObj());
+  currentId = chats[chats.length - 1].id;
+}
+let transcript = currentChat().transcript;
 let members = [{ id: "claude", name: "Claude", model: "", status: "checking" }];
 let sample = null;
 let mcp = null;
 let permissions = null;
 let run = null;
+const thinkingWarned = new Set();
 
 function loadStore() {
   try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; } catch { return {}; }
 }
 function saveStore() {
-  // 系统提示（掉线、没配好之类）只在本次显示，不存
-  const keep = transcript.filter((x) => x.type === "msg").slice(-200);
-  try { localStorage.setItem(STORE_KEY, JSON.stringify({ settings, transcript: keep })); } catch {}
+  // 系统提示（掉线、没配好之类）只在本次显示，不存；最多留 30 个聊天
+  const keepChats = chats
+    .map((c) => ({ ...c, transcript: c.transcript.filter((x) => x.type === "msg").slice(-200) }))
+    .filter((c) => c.transcript.length || c.id === currentId)
+    .slice(-30);
+  try { localStorage.setItem(STORE_KEY, JSON.stringify({ settings, chats: keepChats, currentId })); } catch {}
+}
+function newChatObj() {
+  return { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), createdAt: Date.now(), updatedAt: Date.now(), title: "", transcript: [] };
+}
+function currentChat() {
+  return chats.find((c) => c.id === currentId);
+}
+function chatTitle(chat) {
+  if (chat.title) return chat.title;
+  const first = chat.transcript.find((x) => x.type === "msg" && x.speaker === "user");
+  return first ? first.text.replace(/\s+/g, " ").slice(0, 30) : "";
+}
+function msgCount(chat) {
+  return chat.transcript.filter((x) => x.type === "msg").length;
+}
+function thinkingOf(id) {
+  const v = settings.thinking[id];
+  if (id === "claude") return CLAUDE_THINK[v] ? v : "medium";
+  return OTHER_THINK[v] ? v : "auto";
 }
 
 const $ = (s) => document.querySelector(s);
@@ -412,6 +481,18 @@ function scrollToBottom(force) {
 function addEntry(entry) {
   const stick = nearBottom();
   transcript.push(entry);
+  const chat = currentChat();
+  if (entry.type === "msg") {
+    chat.updatedAt = Date.now();
+    if (!chat.title) chat.title = chatTitle(chat);
+    if (!chat.longHinted && msgCount(chat) >= LONG_CHAT && $("#banner").hidden) {
+      chat.longHinted = true;
+      showBanner(`这个聊天已经有 ${msgCount(chat)} 条了，AI 只看得到最近的部分。开个新聊天，回复会更快也更省。`, {
+        label: "开新聊天",
+        run: () => { hideBanner(); newChat(); },
+      });
+    }
+  }
   saveStore();
   const box = $("#msgs");
   box.querySelector(".welcome")?.remove();
@@ -447,6 +528,7 @@ function hideBanner() { $("#banner").hidden = true; }
 
 // ---------- 连接 ----------
 async function init() {
+  saveStore(); // 旧版单个聊天记录迁移后立即写回
   renderAll();
   renderHeader();
   const use = window.claude && window.claude.use ? (n) => window.claude.use(n).catch(() => null) : async () => null;
@@ -600,12 +682,19 @@ async function speak(id, ctx, me) {
       const res = await sample([{ role: "user", content: system }, ...turns], {
         cache: false,
         signal: me.ctl.signal,
-        modelTier: settings.claudeTier,
+        ...CLAUDE_THINK[thinkingOf("claude")].opts,
       });
       raw = res.text;
     } else {
-      const res = await mcp.callTool(SERVER, "chat", { member: id, messages: [{ role: "system", content: system }, ...turns] }, { signal: me.ctl.signal });
-      raw = res.payload && typeof res.payload === "object" ? res.payload.text : "";
+      const level = thinkingOf(id);
+      const input = { member: id, messages: [{ role: "system", content: system }, ...turns], thinking: level, timeout_s: WAIT_S[level] };
+      const res = await mcp.callTool(SERVER, "chat", input, { signal: me.ctl.signal });
+      const payload = res.payload && typeof res.payload === "object" ? res.payload : {};
+      raw = payload.text || "";
+      if (payload.thinking_ignored && !thinkingWarned.has(id)) {
+        thinkingWarned.add(id);
+        note(`${m.name} 不认思考强度的参数，这次按它的默认方式回答。可以在中转站设置页给它换一种“思考参数格式”。`);
+      }
     }
     return clean(raw || "", m);
   } catch (e) {
@@ -725,7 +814,6 @@ $("#stop").onclick = () => { stopRun(); note("你按了停，大家先安静一�
 // ---------- 设置 ----------
 function openSettings() {
   $("#setNick").value = settings.nickname;
-  $("#setTier").value = settings.claudeTier;
   $("#setMax").value = String(settings.maxPerRound);
   $("#setRounds").value = String(settings.extraRounds);
   const box = $("#setMembers");
@@ -733,7 +821,13 @@ function openSettings() {
   for (const m of members) {
     const row = document.createElement("div");
     row.className = "mem";
-    row.innerHTML = '<div class="mem-head"><b></b><small></small><label class="toggle"><input type="checkbox">在群里</label></div><label class="field">性格<textarea rows="2"></textarea></label>';
+    row.innerHTML = '<div class="mem-head"><b></b><small></small><label class="toggle"><input type="checkbox">在群里</label></div>' +
+      '<div class="mem-body"><label class="field">思考强度<select></select></label><label class="field">性格<textarea rows="2"></textarea></label></div>';
+    const sel = row.querySelector("select");
+    sel.id = "think-" + m.id;
+    const choices = m.id === "claude" ? Object.fromEntries(Object.entries(CLAUDE_THINK).map(([k, v]) => [k, v.label])) : OTHER_THINK;
+    for (const [k, label] of Object.entries(choices)) sel.append(new Option(label, k));
+    sel.value = thinkingOf(m.id);
     row.querySelector(".mem-head").prepend(avatar(m.id));
     row.querySelector("b").textContent = m.name;
     const status = { ready: m.model || "在线", unready: "中转站没配好", unavailable: "连不上", checking: "检查中" }[m.status] || m.status;
@@ -748,22 +842,19 @@ function openSettings() {
     row.dataset.id = m.id;
     box.append(row);
   }
-  const clear = $("#clearChat");
-  clear.textContent = "清空聊天记录";
-  clear.dataset.armed = "";
   const d = $("#settings");
   if (d.showModal) d.showModal(); else d.setAttribute("open", "");
 }
 
 function applySettings() {
   settings.nickname = $("#setNick").value.trim().slice(0, 12) || "我";
-  settings.claudeTier = $("#setTier").value;
   settings.maxPerRound = Number($("#setMax").value);
   settings.extraRounds = Number($("#setRounds").value);
   for (const row of document.querySelectorAll("#setMembers .mem")) {
     const id = row.dataset.id;
     const cb = row.querySelector("input");
     if (!cb.disabled) settings.off[id] = !cb.checked;
+    settings.thinking[id] = row.querySelector("select").value;
     const v = row.querySelector("textarea").value.trim();
     if (v && v !== DEFAULT_PERSONAS[id]) settings.personas[id] = v; else delete settings.personas[id];
   }
@@ -779,14 +870,77 @@ $("#reloadMembers").onclick = async () => {
   $("#settings").close();
   if (mcp) { hideBanner(); await loadMembers(); }
 };
-$("#clearChat").onclick = (e) => {
-  const b = e.currentTarget;
-  if (!b.dataset.armed) { b.dataset.armed = "1"; b.textContent = "再点一次确认清空"; return; }
+
+// ---------- 多个聊天 ----------
+function switchChat(id) {
+  if (id === currentId) return;
   stopRun();
-  transcript = [];
+  currentId = id;
+  transcript = currentChat().transcript;
+  hideBanner();
   saveStore();
-  $("#settings").close();
   renderAll();
+}
+
+function newChat() {
+  if (!msgCount(currentChat())) { $("#input").focus(); return; }
+  const chat = newChatObj();
+  chats.push(chat);
+  switchChat(chat.id);
+  $("#input").focus();
+}
+
+function deleteChat(id) {
+  const i = chats.findIndex((c) => c.id === id);
+  if (i < 0) return;
+  chats.splice(i, 1);
+  if (id === currentId) {
+    stopRun();
+    if (!chats.length) chats.push(newChatObj());
+    currentId = chats[chats.length - 1].id;
+    transcript = currentChat().transcript;
+    renderAll();
+  }
+  saveStore();
+  renderChatList();
+}
+
+function renderChatList() {
+  const list = $("#chatList");
+  list.replaceChildren();
+  const sorted = [...chats].filter((c) => msgCount(c) || c.id === currentId).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  for (const c of sorted) {
+    const item = document.createElement("div");
+    item.className = "chatitem" + (c.id === currentId ? " current" : "");
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "open";
+    const title = document.createElement("b");
+    title.textContent = chatTitle(c) || "新聊天";
+    const meta = document.createElement("small");
+    const when = new Date(c.updatedAt || c.createdAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    meta.textContent = `${msgCount(c)} 条 · ${when}` + (c.id === currentId ? " · 当前" : "");
+    open.append(title, meta);
+    open.onclick = () => { $("#chats").close(); switchChat(c.id); };
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "del";
+    del.textContent = "删除";
+    del.onclick = () => {
+      if (!del.classList.contains("armed")) { del.classList.add("armed"); del.textContent = "确认删除"; return; }
+      deleteChat(c.id);
+    };
+    item.append(open, del);
+    list.append(item);
+  }
+}
+
+$("#newChat").onclick = newChat;
+$("#newChatFromList").onclick = () => { $("#chats").close(); newChat(); };
+$("#openChats").onclick = () => {
+  renderChatList();
+  const d = $("#chats");
+  if (d.showModal) d.showModal(); else d.setAttribute("open", "");
 };
 
 init();

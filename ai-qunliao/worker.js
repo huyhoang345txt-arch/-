@@ -97,18 +97,33 @@ async function callModel(cfg, m, messages, opts = {}) {
   const body = { model: m.model, messages, stream: false };
   if (opts.max_tokens) body.max_tokens = opts.max_tokens;
   if (typeof opts.temperature === "number") body.temperature = opts.temperature;
+  const thinkingFields = thinkingParams(thinkingStyle(m, endpoint), opts.thinking);
+  Object.assign(body, thinkingFields);
 
   const headers = { "Content-Type": "application/json", Authorization: `Bearer ${key}` };
   if (endpoint.startsWith(OPENROUTER)) headers["X-Title"] = "AI Group Chat";
+  const seconds = Math.min(Math.max(Number(opts.timeout_s) || 50, 10), 115);
 
-  let res;
-  try {
-    res = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(50000) });
-  } catch (e) {
-    if (e.name === "TimeoutError") throw new Error(`${m.name} 50 秒没回复，这次先跳过`);
-    throw new Error(`${m.name} 连不上（网络错误），检查接口地址`);
+  const send = async (b) => {
+    try {
+      return await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(b), signal: AbortSignal.timeout(seconds * 1000) });
+    } catch (e) {
+      if (e.name === "TimeoutError") throw new Error(`${m.name} ${seconds} 秒没回复，这次先跳过`);
+      throw new Error(`${m.name} 连不上（网络错误），检查接口地址`);
+    }
+  };
+
+  let res = await send(body);
+  let raw = await res.text();
+  // 有的服务商不认思考参数，会直接报 400；去掉思考参数再试一次
+  let thinkingIgnored = false;
+  if ((res.status === 400 || res.status === 422) && Object.keys(thinkingFields).length) {
+    const plain = { ...body };
+    for (const k of Object.keys(thinkingFields)) delete plain[k];
+    res = await send(plain);
+    raw = await res.text();
+    thinkingIgnored = res.ok;
   }
-  const raw = await res.text();
   let data = null;
   try { data = JSON.parse(raw); } catch {}
   if (!res.ok) {
@@ -118,10 +133,45 @@ async function callModel(cfg, m, messages, opts = {}) {
   const choice = data?.choices?.[0];
   const text = choice?.message?.content;
   if (typeof text !== "string" || !text.trim()) {
-    if (choice?.finish_reason === "length") throw new Error(`${m.name} 思考把长度额度用完了，没来得及回答（调大 max_tokens 或不设）`);
+    if (choice?.finish_reason === "length") throw new Error(`${m.name} 思考把长度额度用完了，没来得及回答（把思考强度调低试试）`);
     throw new Error(`${m.name} 返回了空内容`);
   }
-  return { text: text.trim(), model: data.model || m.model, usage: data.usage || null };
+  return { text: text.trim(), model: data.model || m.model, usage: data.usage || null, thinking_ignored: thinkingIgnored };
+}
+
+// ---------- 思考强度 ----------
+// 各家调思考强度的参数写法不同，按接口地址自动判断，也可以在设置页手动指定。
+//   openrouter     reasoning: {effort} / {enabled: false}
+//   enable_thinking  enable_thinking + thinking_budget（通义、硅基流动、魔搭）
+//   thinking_type  thinking: {type: enabled/disabled}（智谱 GLM、DeepSeek、Kimi、火山方舟）
+//   openai         reasoning_effort（OpenAI 及其他兼容接口）
+//   none           不发送任何思考参数
+const THINKING_STYLES = ["auto", "openrouter", "enable_thinking", "thinking_type", "openai", "none"];
+const THINKING_LEVELS = ["auto", "off", "low", "medium", "high"];
+
+function thinkingStyle(m, endpoint) {
+  if (m.thinking_style && m.thinking_style !== "auto") return m.thinking_style;
+  let host = "";
+  try { host = new URL(endpoint).hostname; } catch {}
+  if (host.endsWith("openrouter.ai")) return "openrouter";
+  if (/dashscope|siliconflow|modelscope/.test(host)) return "enable_thinking";
+  if (/bigmodel\.cn|z\.ai|deepseek\.com|moonshot|volces\.com/.test(host)) return "thinking_type";
+  return "openai";
+}
+
+function thinkingParams(style, level) {
+  if (!level || level === "auto" || style === "none") return {};
+  const off = level === "off";
+  switch (style) {
+    case "openrouter":
+      return { reasoning: off ? { enabled: false } : { effort: level, exclude: true } };
+    case "enable_thinking":
+      return off ? { enable_thinking: false } : { enable_thinking: true, thinking_budget: { low: 1024, medium: 4096, high: 16384 }[level] };
+    case "thinking_type":
+      return { thinking: { type: off ? "disabled" : "enabled" } };
+    default:
+      return { reasoning_effort: off ? "none" : level };
+  }
 }
 
 function explainStatus(s) {
@@ -161,6 +211,7 @@ async function handleAdmin(request, env, action, url) {
       if (typeof patch.base_url === "string") m.base_url = patch.base_url.trim();
       if (typeof patch.model === "string") m.model = patch.model.trim();
       if (typeof patch.enabled === "boolean") m.enabled = patch.enabled;
+      if (THINKING_STYLES.includes(patch.thinking_style)) m.thinking_style = patch.thinking_style;
       if (typeof patch.api_key === "string") m.api_key = patch.api_key.trim();
     }
     const stored = { openrouter_key: cfg.openrouter_key, members: cfg.members.map(({ hint, ready, ...m }) => m) };
@@ -174,7 +225,7 @@ async function handleAdmin(request, env, action, url) {
     if (!m) return json({ error: "没有这个成员" }, 400);
     try {
       const r = await callModel({ ...cfg }, { ...m, enabled: true }, [{ role: "user", content: "用一句话打个招呼，不超过15个字。" }]);
-      return json({ ok: true, text: r.text, model: r.model });
+      return json({ ok: true, text: r.text, model: r.model, style: thinkingStyle(m, m.base_url) });
     } catch (e) {
       return json({ ok: false, error: e.message });
     }
@@ -208,6 +259,8 @@ const TOOLS = [
         },
         max_tokens: { type: "integer", minimum: 1, maximum: 8000 },
         temperature: { type: "number", minimum: 0, maximum: 2 },
+        thinking: { type: "string", enum: THINKING_LEVELS, description: "思考强度：auto 用服务商默认，off 关闭，low/medium/high" },
+        timeout_s: { type: "integer", minimum: 10, maximum: 115, description: "最多等多少秒，默认 50" },
       },
       required: ["member", "messages"],
     },
@@ -268,8 +321,9 @@ async function callTool(name, args, env) {
       : [];
     if (!messages.length) return toolErr("messages 是空的");
     try {
-      const r = await callModel(cfg, m, messages, { max_tokens: args.max_tokens, temperature: args.temperature });
-      return toolOk({ member: m.id, name: m.name, text: r.text, model: r.model });
+      const thinking = THINKING_LEVELS.includes(args.thinking) ? args.thinking : "auto";
+      const r = await callModel(cfg, m, messages, { max_tokens: args.max_tokens, temperature: args.temperature, thinking, timeout_s: args.timeout_s });
+      return toolOk({ member: m.id, name: m.name, text: r.text, model: r.model, thinking_ignored: r.thinking_ignored });
     } catch (e) {
       return toolErr(e.message);
     }
@@ -324,7 +378,7 @@ p.sub{margin:4px 0 0;color:var(--muted)}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;display:grid;gap:10px}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .row>label{flex:1 1 200px;display:grid;gap:4px;font-size:13px;color:var(--muted);min-width:0}
-input[type=text],input[type=password]{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--fg);font:inherit;font-size:14px}
+select,input[type=text],input[type=password]{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--fg);font:inherit;font-size:14px}
 input:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 button{padding:8px 14px;border-radius:7px;border:1px solid var(--line);background:var(--card);color:var(--fg);font:inherit;font-size:14px;cursor:pointer}
 button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
@@ -404,6 +458,12 @@ async function load() {
       '<div class="row"><label>显示名<input type="text" data-f="name"></label><label>模型名<input type="text" data-f="model"></label></div>' +
       '<div class="row"><label>接口地址<input type="text" data-f="base_url"></label></div>' +
       '<div class="row"><label>key<input type="text" data-f="api_key" autocomplete="off"></label></div>' +
+      '<div class="row"><label>思考参数格式<select data-f="thinking_style">' +
+        '<option value="auto">自动识别</option><option value="openrouter">OpenRouter（reasoning）</option>' +
+        '<option value="enable_thinking">enable_thinking（通义、硅基流动、魔搭）</option>' +
+        '<option value="thinking_type">thinking.type（智谱、DeepSeek、Kimi、火山）</option>' +
+        '<option value="openai">reasoning_effort（OpenAI 式）</option><option value="none">不发送（不能调思考）</option>' +
+      '</select></label></div>' +
       '<div class="row"><label style="flex:0 0 auto;display:flex;gap:6px;align-items:center;color:var(--fg)"><input type="checkbox" data-f="enabled">在群里</label>' +
       '<button type="button" class="small" data-act="test">测试</button><button type="button" class="small" data-act="clear">清除 key</button></div>' +
       '<div class="msg" data-out></div>';
@@ -418,6 +478,7 @@ async function load() {
     const k = el.querySelector('[data-f=api_key]');
     k.placeholder = m.api_key ? "已保存 " + m.api_key + "，留空不改" : (m.via_openrouter ? "留空则用 OpenRouter 共享 key" : "sk-...");
     el.querySelector('[data-f=enabled]').checked = m.enabled;
+    el.querySelector('[data-f=thinking_style]').value = m.thinking_style || "auto";
     el.querySelector('[data-act=clear]').onclick = () => { cleared.add(m.id); k.value = ""; k.placeholder = "保存后清除"; };
     el.querySelector('[data-act=test]').onclick = async () => {
       const out = el.querySelector("[data-out]");
@@ -441,7 +502,7 @@ function collect() {
   for (const el of document.querySelectorAll("#members .card")) {
     const id = el.dataset.id;
     const v = (f) => el.querySelector("[data-f=" + f + "]");
-    const patch = { id, name: v("name").value, model: v("model").value, base_url: v("base_url").value, enabled: v("enabled").checked };
+    const patch = { id, name: v("name").value, model: v("model").value, base_url: v("base_url").value, enabled: v("enabled").checked, thinking_style: v("thinking_style").value };
     const key = v("api_key").value.trim();
     if (key) patch.api_key = key; else if (cleared.has(id)) patch.api_key = "";
     body.members.push(patch);
