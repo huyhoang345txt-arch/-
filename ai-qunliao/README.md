@@ -3,7 +3,7 @@
 `worker.js` 是部署在 Cloudflare Workers 上的中转站：
 
 - `/admin`：带密码的设置页，用来填写、更换各家 API key，每家都能单独测试。
-- `/mcp`：MCP 连接器入口，请求头 `X-Qunliao-Key` 要带上门票（`MCP_SECRET`）。添加到 claude.ai 后，群聊页面通过它调用 GPT、Gemini、Grok、DeepSeek、Kimi、Qwen、GLM。
+- `/mcp`：MCP 连接器入口，请求头 `X-API-Key`（或 `Api-Key`、`Authorization`）要带上门票（`MCP_SECRET`）。添加到 claude.ai 后，群聊页面通过它调用 GPT、Gemini、Grok、DeepSeek、Kimi、Qwen、GLM。
 
 Claude 本身不走这里，直接在群聊页面里用套餐额度调用。
 
@@ -21,7 +21,7 @@ Claude 本身不走这里，直接在群聊页面里用套餐额度调用。
    - 名字：`qunliao`
    - 网址：`https://ai-qunliao.<你的子域名>.workers.dev/mcp`（网址里没有秘密，可以截图）
    - 认证：No sign-in
-   - Request headers → Add header：名字填 `X-Qunliao-Key`，值用设置页的“复制门票”按钮复制后粘贴
+   - Request headers → Add header：名字在下拉框里选 `X-API-Key`（没有就选 `Authorization`），值用设置页的“复制门票”按钮复制后粘贴
 
 ## 换门票
 

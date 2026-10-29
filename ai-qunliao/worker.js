@@ -1,7 +1,7 @@
 // AI 群聊中转站：一个 Cloudflare Worker，做两件事
 //   1. /admin            —— 带密码的设置页，填写和更换各家 API key
 //   2. /mcp      —— MCP 连接器入口，claude.ai 的群聊页面通过它调用各家模型
-//                   请求头 X-Qunliao-Key 必须等于 MCP_SECRET
+//                   门票 MCP_SECRET 放在请求头里：X-API-Key、Api-Key 或 Authorization（可带 Bearer 前缀）
 //
 // 需要的绑定（在 Cloudflare 后台设置）：
 //   KV              KV 命名空间，存配置和 key
@@ -9,7 +9,16 @@
 //   MCP_SECRET      机密，一串随机字符，连接器的门票，放在请求头里
 
 const OPENROUTER = "https://openrouter.ai/api/v1";
-const TICKET_HEADER = "X-Qunliao-Key";
+// claude.ai 只允许预设的请求头名字，所以这几个都认
+const TICKET_HEADERS = ["X-API-Key", "Api-Key", "Authorization"];
+
+function readTicket(request) {
+  for (const name of TICKET_HEADERS) {
+    const v = request.headers.get(name);
+    if (v) return v.trim().replace(/^Bearer\s+/i, "");
+  }
+  return "";
+}
 
 // 群成员的初始配置。OpenRouter 的三家 key 留空时用共享的 OpenRouter key。
 const DEFAULT_MEMBERS = [
@@ -40,7 +49,7 @@ export default {
       if (path === "/" || path === "/admin") return html(ADMIN_PAGE);
       if (path.startsWith("/admin/api/")) return await handleAdmin(request, env, path.slice(11), url);
       if (path === "/mcp") {
-        const ticket = request.headers.get(TICKET_HEADER) || "";
+        const ticket = readTicket(request);
         if (!env.MCP_SECRET || !(await same(ticket, env.MCP_SECRET))) return new Response("Unauthorized", { status: 401 });
         return await handleMcp(request, env);
       }
@@ -136,7 +145,7 @@ async function handleAdmin(request, env, action, url) {
       openrouter_key: mask(cfg.openrouter_key),
       members: cfg.members.map((m) => ({ ...m, api_key: mask(m.api_key), ready: isReady(cfg, m), hint: MODEL_HINTS[m.id] })),
       connector_url: `${url.origin}/mcp`,
-      ticket_header: TICKET_HEADER,
+      ticket_header: TICKET_HEADERS[0],
       ticket: env.MCP_SECRET || null,
     });
   }
@@ -340,11 +349,11 @@ code{font-family:ui-monospace,Menlo,monospace;font-size:13px;word-break:break-al
 <div id="app" hidden style="display:grid;gap:16px">
   <div class="card">
     <div class="head"><b>添加连接器用的信息</b></div>
-    <p class="msg">claude.ai → 设置 → 连接器 → 添加自定义连接器。认证选 No sign-in，在 Request headers 里加一个请求头。</p>
+    <p class="msg">claude.ai → 设置 → 连接器 → 添加自定义连接器。认证选 No sign-in，在 Request headers 里加一个请求头。下拉框里没有 X-API-Key 的话，选 Authorization 也行。</p>
     <div class="msg">网址（可以截图）</div>
     <code id="connUrl"></code>
     <div class="row"><button type="button" class="small" data-copy="connUrl">复制网址</button></div>
-    <div class="msg">请求头名</div>
+    <div class="msg">请求头名（在下拉框里选）</div>
     <code id="ticketName"></code>
     <div class="row"><button type="button" class="small" data-copy="ticketName">复制请求头名</button></div>
     <div class="msg">请求头值（门票，不要截图、不要发给别人）</div>
