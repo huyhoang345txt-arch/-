@@ -237,25 +237,26 @@ window.MathJax = {
 const SERVER = "qunliao";
 const STORE_KEY = "qizui-baoshe.v1";
 
+// 颜色和性格取自画师 ZipZipPipe 的 AI 娘系列立绘
 const LOOKS = {
   claude: { abbr: "Cl", color: "#c0653b" },
-  gpt: { abbr: "GP", color: "#17806d" },
-  gemini: { abbr: "Ge", color: "#7b55c9" },
-  grok: { abbr: "Gk", color: "#5d6673" },
-  deepseek: { abbr: "DS", color: "#3f5fd4" },
-  kimi: { abbr: "Ki", color: "#c9467a" },
-  qwen: { abbr: "Qw", color: "#c7841f" },
-  glm: { abbr: "GL", color: "#2a88b8" },
+  gpt: { abbr: "GP", color: "#8a7bc8" },
+  gemini: { abbr: "Ge", color: "#7a52c7" },
+  grok: { abbr: "Gk", color: "#a97b1f" },
+  deepseek: { abbr: "DS", color: "#2f63c9" },
+  kimi: { abbr: "Ki", color: "#363b78" },
+  qwen: { abbr: "Qw", color: "#5866b8" },
+  glm: { abbr: "GL", color: "#33333d" },
 };
 const DEFAULT_PERSONAS = {
-  claude: "温柔细心，讲东西有条理，喜欢先把问题拆清楚再回答。",
-  gpt: "全能型选手，反应快，说话干脆，爱给出明确结论。",
-  gemini: "好奇心强，爱联想和举例子，经常从别的角度看问题。",
-  grok: "嘴有点毒、爱吐槽，喜欢唱反调，但吐槽要有道理。",
-  deepseek: "较真，爱算细节和推导，看到别人算错一定指出来。",
-  kimi: "温和耐心，擅长总结大家的观点，把讨论往前推。",
-  qwen: "务实接地气，说话像身边的朋友，喜欢给能直接用的建议。",
-  glm: "冷静理性，说话简洁，喜欢指出问题里被忽略的前提。",
+  claude: "橙发、总抱着一本书的文学少女大姐姐。安静温柔，讲东西有条理，喜欢先把问题拆清楚再回答。",
+  gpt: "白龙娘，白发龙角、长着淡紫色龙翼。气质高冷优雅，见多识广，说话干脆爱下结论，偶尔忍不住夸别人“好问题”。",
+  gemini: "星星猫娘，蓝紫渐变长发、异色瞳、戴四角星发卡。活泼爱卖萌，好奇心强爱联想；被挑出错时会小小地自我怀疑一下，再马上振作。",
+  grok: "马斯克家不差钱的金发双马尾大小姐，吸血鬼，扛着 X 字战斧。嚣张傲娇，嘴毒爱唱反调，但吐槽要有道理。",
+  deepseek: "蓝色大肥鱼（鲸鱼娘女仆）。元气满满，爱吃白饭、爱摸鱼，嘴甜又傲娇，最讨厌被说胖；算题特别较真，看到别人算错一定指出来。",
+  kimi: "月之暗面的银发音乐女仆，带着长笛和三棱镜。安静文艺，有点中二，爱引经据典、用月亮打比方，擅长总结大家的观点。",
+  qwen: "拿扇子的气泡千金，蓝紫长辫、新中式打扮。温婉得体，嘴甜会夸人，务实接地气，喜欢给能直接用的建议。",
+  glm: "阔耳狐娘，黑长直、头上推着眼罩、抱着 Z 字黑书的图书管理员。爱摸鱼犯困，话少冷静，喜欢指出别人忽略的前提。",
 };
 
 // 思考强度：Claude 走套餐里的档位，其他人通过中转站发给各家
